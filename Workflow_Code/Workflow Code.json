@@ -1,0 +1,123 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "actions": {
+      "For_each": {
+        "type": "foreach",
+        "foreach": "@triggerBody()?['attachments']",
+        "actions": {
+          "Get_Attachment_(V2)": {
+            "type": "ApiConnection",
+            "inputs": {
+              "host": {
+                "connection": {
+                  "referenceName": "office365"
+                }
+              },
+              "method": "get",
+              "path": "/codeless/v1.0/me/messages/@{encodeURIComponent(triggerBody()?['id'])}/attachments/@{encodeURIComponent(items('For_each')?['id'])}"
+            }
+          },
+          "Condition": {
+            "type": "If",
+            "expression": {
+              "and": [
+                {
+                  "equals": [
+                    "@triggerBody()?['hasAttachments']",
+                    true
+                  ]
+                },
+                {
+                  "endsWith": [
+                    "@body('Get_Attachment_(V2)')?['name']",
+                    "pdf"
+                  ]
+                }
+              ]
+            },
+            "actions": {
+              "Create_blob_(V2)": {
+                "type": "ApiConnection",
+                "inputs": {
+                  "host": {
+                    "connection": {
+                      "referenceName": "azureblob-1"
+                    }
+                  },
+                  "method": "post",
+                  "body": "@base64ToBinary(body('Get_Attachment_(V2)')?['contentBytes'])",
+                  "headers": {
+                    "ReadFileMetadataFromServer": true
+                  },
+                  "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/files",
+                  "queries": {
+                    "folderPath": "/edw/PDF Extraction/",
+                    "name": "@body('Get_Attachment_(V2)')?['name']",
+                    "queryParametersSingleEncoded": true
+                  }
+                },
+                "runtimeConfiguration": {
+                  "contentTransfer": {
+                    "transferMode": "Chunked"
+                  }
+                }
+              }
+            },
+            "else": {
+              "actions": {}
+            },
+            "runAfter": {
+              "Get_Attachment_(V2)": [
+                "SUCCEEDED"
+              ]
+            }
+          }
+        },
+        "runAfter": {}
+      }
+    },
+    "contentVersion": "1.0.0.0",
+    "outputs": {},
+    "triggers": {
+      "When_a_new_email_arrives_(V3)": {
+        "type": "ApiConnectionNotification",
+        "inputs": {
+          "host": {
+            "connection": {
+              "referenceName": "office365"
+            }
+          },
+          "fetch": {
+            "pathTemplate": {
+              "template": "/v3/Mail/OnNewEmail"
+            },
+            "method": "get",
+            "queries": {
+              "importance": "Any",
+              "fetchOnlyWithAttachment": true,
+              "includeAttachments": true,
+              "folderPath": "Inbox"
+            }
+          },
+          "subscribe": {
+            "body": {
+              "NotificationUrl": "@listCallbackUrl()"
+            },
+            "pathTemplate": {
+              "template": "/GraphMailSubscriptionPoke/$subscriptions"
+            },
+            "method": "post",
+            "queries": {
+              "importance": "Any",
+              "fetchOnlyWithAttachment": true,
+              "folderPath": "Inbox"
+            }
+          }
+        },
+        "splitOn": "@triggerBody()?['value']"
+      }
+    }
+  },
+  "kind": "Stateful"
+}
